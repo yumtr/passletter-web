@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background: #f5f0e6;
+  color: #3d2e1f;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.serif {
+  font-family: "Georgia", "Times New Roman", serif;
+}
+
+.card-shadow {
+  box-shadow: 0 2px 6px rgba(140, 107, 71, 0.06);
+}
+
+.triangle {
+  width: 0;
+  height: 0;
+  border-left: 20px solid transparent;
+  border-right: 20px solid transparent;
+  border-bottom: 28px solid rgba(196, 168, 131, 0.15);
+}
