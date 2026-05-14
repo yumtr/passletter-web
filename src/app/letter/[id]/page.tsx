@@ -31,8 +31,42 @@ export default function LetterDetailPage() {
       <div className="min-h-screen bg-bg flex items-center justify-center">
         <p className="text-secondary">편지를 찾을 수 없습니다</p>
       </div>
-    )
-  }
+  )
+}
+
+function ThreadMsg({
+  content,
+  isReply,
+  createdAt,
+}: {
+  content: string
+  isReply: boolean
+  createdAt: Date
+}) {
+  return (
+    <div className={`flex ${isReply ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`max-w-[70%] px-3 py-2.5 rounded-xl ${
+          isReply ? "bg-primary/8" : "bg-paper"
+        }`}
+      >
+        <p className="text-sm serif text-text leading-snug">{content}</p>
+        <div className={`flex items-center gap-1.5 mt-1 ${isReply ? "justify-end" : "justify-start"}`}>
+          <span className="text-[11px] text-accent">
+            {isReply ? "✉︎ 답장" : "편지"}
+          </span>
+          <span className="text-[11px] text-secondary">
+            {new Date(createdAt).toLocaleDateString("ko-KR", {
+              month: "short",
+              day: "numeric",
+            })}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 
   const handleDelete = () => {
     setIsTorn(true)
@@ -67,20 +101,27 @@ export default function LetterDetailPage() {
               : "opacity-100 blur-0 translate-x-0 translate-y-0 scale-100"
           }`}
         >
-          {thread.map((tl) => {
-            const isMain = tl.id === letter.id
-            const isMine = store.sentLetters.some((l) => l.id === tl.id)
-            return isMain ? (
-              <LetterPaper key={tl.id} letter={tl} store={store} />
-            ) : (
-              <ThreadCard
-                key={tl.id}
-                letter={tl}
-                isMine={isMine}
-                store={store}
-              />
-            )
-          })}
+          {letter.thread
+            ? <>
+                {letter.thread.map((msg, i) => (
+                  <ThreadMsg key={i} content={msg.content} isReply={msg.isReply} createdAt={msg.createdAt} />
+                ))}
+                <LetterPaper letter={letter} store={store} />
+              </>
+            : thread.map((tl) => {
+                const isMain = tl.id === letter.id
+                const isMine = store.sentLetters.some((l) => l.id === tl.id)
+                return isMain ? (
+                  <LetterPaper key={tl.id} letter={tl} store={store} />
+                ) : (
+                  <ThreadCard
+                    key={tl.id}
+                    letter={tl}
+                    isMine={isMine}
+                    store={store}
+                  />
+                )
+              })}
         </div>
 
         {!isSentByMe && !isTorn && (

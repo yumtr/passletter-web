@@ -10,7 +10,7 @@ import {
   useMemo,
   type ReactNode,
 } from "react"
-import type { Letter } from "./types"
+import type { Letter, ThreadMessage } from "./types"
 import {
   signIn,
   sendLetterToFirebase,
@@ -36,6 +36,9 @@ const PRESETS = [
   "편지를 읽어줘서 고마워.",
 ]
 
+const RANDOM_LIMIT = 10
+const RANDOM_WINDOW_MS = 3600000
+
 function todayString(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
@@ -56,6 +59,10 @@ function migrateLetterDates(letters: Letter[]): Letter[] {
   return letters.map((l) => ({
     ...l,
     createdAt: l.createdAt instanceof Date ? l.createdAt : new Date(l.createdAt),
+    thread: l.thread?.map((m) => ({
+      ...m,
+      createdAt: m.createdAt instanceof Date ? m.createdAt : new Date(m.createdAt),
+    })),
   }))
 }
 
@@ -75,6 +82,7 @@ interface LetterStore {
   isConnected: boolean
   canWriteToday: boolean
   remainingWritesToday: number
+  remainingRandomFetches: number
   signInToFirebase: () => Promise<void>
   sendLetter: (content: string, replyToId?: string) => boolean
   fetchRandom: () => void
@@ -124,6 +132,12 @@ export function LetterProvider({ children }: { children: ReactNode }) {
   const [lastPresetDate, setLastPresetDate] = useState(() =>
     loadFromStorage("lastPresetDate", "")
   )
+  const [randomFetchCount, setRandomFetchCount] = useState(() =>
+    loadFromStorage("randomFetchCount", 0)
+  )
+  const [randomFetchWindow, setRandomFetchWindow] = useState(() =>
+    loadFromStorage("randomFetchWindow", 0)
+  )
   const [mounted, setMounted] = useState(false)
   const [isFetching, setIsFetching] = useState(false)
   const [isConnected, setIsConnected] = useState(false)
@@ -144,14 +158,14 @@ export function LetterProvider({ children }: { children: ReactNode }) {
     saveToStorage("extraWritesAvailable", extraWritesAvailable)
     saveToStorage("lastWriteDate", lastWriteDate)
     saveToStorage("lastPresetDate", lastPresetDate)
+    saveToStorage("randomFetchCount", randomFetchCount)
+    saveToStorage("randomFetchWindow", randomFetchWindow)
     saveToStorage("firebaseUserId", firebaseUserId)
   }, [
-    receivedLetters,
-    sentLetters,
-    writesUsedToday,
-    extraWritesAvailable,
-    lastWriteDate,
-    lastPresetDate,
+    receivedLetters, sentLetters,
+    writesUsedToday, extraWritesAvailable,
+    lastWriteDate, lastPresetDate,
+    randomFetchCount, randomFetchWindow,
     firebaseUserId,
   ])
 
@@ -172,12 +186,22 @@ export function LetterProvider({ children }: { children: ReactNode }) {
     resetDaily()
   }, [])
 
-  const canWriteToday = writesUsedToday < 3 + extraWritesAvailable
+  const resetRandomWindow = useCallback(() => {
+    const now = Date.now()
+    if (now - randomFetchWindow > RANDOM_WINDOW_MS) {
+      setRandomFetchWindow(now)
+      setRandomFetchCount(0)
+    }
+  }, [randomFetchWindow])
 
-  const remainingWritesToday = Math.max(
-    0,
-    3 + extraWritesAvailable - writesUsedToday
-  )
+  useEffect(() => {
+    resetRandomWindow()
+  }, [])
+
+  const remainingRandomFetches = Math.max(0, RANDOM_LIMIT - randomFetchCount)
+
+  const canWriteToday = writesUsedToday < 3 + extraWritesAvailable
+  const remainingWritesToday = Math.max(0, 3 + extraWritesAvailable - writesUsedToday)
 
   const signInToFirebase = useCallback(async () => {
     try {
@@ -235,7 +259,7 @@ export function LetterProvider({ children }: { children: ReactNode }) {
         isRead: false,
         isReported: false,
         createdAt: new Date(),
-        status: "original",
+        status: replyToId ? "reply" : "original",
         replyToId,
       }
       setSentLetters((prev) => [...prev, letter])
@@ -250,7 +274,20 @@ export function LetterProvider({ children }: { children: ReactNode }) {
 
   const fetchRandom = useCallback(() => {
     if (isFetching) return
+
+    const now = Date.now()
+    const effectiveCount =
+      now - randomFetchWindow > RANDOM_WINDOW_MS ? 0 : randomFetchCount
+
+    if (effectiveCount >= RANDOM_LIMIT) {
+      return
+    }
+
     setIsFetching(true)
+    if (effectiveCount === 0) {
+      setRandomFetchWindow(now)
+    }
+    setRandomFetchCount(effectiveCount + 1)
 
     const tryFirebase = async () => {
       if (firebaseUserId) {
@@ -300,21 +337,47 @@ export function LetterProvider({ children }: { children: ReactNode }) {
     }
 
     tryFirebase()
-  }, [firebaseUserId, isFetching, myUserId, lastPresetDate])
+  }, [firebaseUserId, isFetching, myUserId, lastPresetDate, randomFetchCount, randomFetchWindow])
 
   const passLetter = useCallback(
     (letter: Letter) => {
+      const allLetters = [...receivedLetters, ...sentLetters]
+      const related = new Set<string>()
+      const queue = [letter.id]
+
+      while (queue.length > 0) {
+        const current = queue.shift()!
+        if (related.has(current)) continue
+        related.add(current)
+        const l = allLetters.find((x) => x.id === current)
+        if (l?.replyToId) queue.push(l.replyToId)
+        for (const x of allLetters) {
+          if (x.replyToId === current) queue.push(x.id)
+        }
+      }
+
+      const threadLetters = allLetters
+        .filter((l) => related.has(l.id))
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+
+      const thread: ThreadMessage[] = threadLetters.map((l) => ({
+        content: l.content,
+        isReply: l.senderId === myUserId,
+        createdAt: l.createdAt,
+      }))
+
       const passed: Letter = {
         ...letter,
         pathCount: letter.pathCount + 1,
         senderId: myUserId,
+        thread,
       }
       const pool = loadFromStorage<Letter[]>("letterPool", [])
       pool.push(passed)
       saveToStorage("letterPool", pool)
 
       if (firebaseUserId) {
-        passLetterToFirebase(letter, firebaseUserId)
+        passLetterToFirebase(letter, firebaseUserId, thread)
       }
       setReceivedLetters((prev) => {
         const next = prev.filter((l) => l.id !== letter.id)
@@ -322,7 +385,7 @@ export function LetterProvider({ children }: { children: ReactNode }) {
         return next
       })
     },
-    [myUserId, firebaseUserId]
+    [myUserId, firebaseUserId, receivedLetters, sentLetters]
   )
 
   const markAsRead = useCallback((letter: Letter) => {
@@ -423,6 +486,7 @@ export function LetterProvider({ children }: { children: ReactNode }) {
       isConnected,
       canWriteToday,
       remainingWritesToday,
+      remainingRandomFetches,
       signInToFirebase,
       sendLetter,
       fetchRandom,
@@ -437,26 +501,14 @@ export function LetterProvider({ children }: { children: ReactNode }) {
       requestExtraWrite,
     }),
     [
-      receivedLetters,
-      sentLetters,
-      myUserId,
-      firebaseUserId,
-      isFetching,
-      isConnected,
-      canWriteToday,
-      remainingWritesToday,
-      signInToFirebase,
-      sendLetter,
-      fetchRandom,
-      passLetter,
-      markAsRead,
-      deleteLetter,
-      reportLetter,
-      hasReply,
-      buildThread,
-      getRandomPreset,
-      refreshFromFirebase,
-      requestExtraWrite,
+      receivedLetters, sentLetters,
+      myUserId, firebaseUserId,
+      isFetching, isConnected,
+      canWriteToday, remainingWritesToday, remainingRandomFetches,
+      signInToFirebase, sendLetter, fetchRandom, passLetter,
+      markAsRead, deleteLetter, reportLetter,
+      hasReply, buildThread, getRandomPreset,
+      refreshFromFirebase, requestExtraWrite,
     ]
   )
 

@@ -32,29 +32,34 @@ export default function PostboxPage() {
         <header className="flex items-center justify-between mb-6">
           <h1 className="text-xl font-bold text-primary">패스레터</h1>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => store.fetchRandom()}
-              disabled={store.isFetching}
-              className="text-primary disabled:opacity-50"
-            >
-              {store.isFetching ? (
-                <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                  />
-                </svg>
-              )}
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => store.fetchRandom()}
+                disabled={store.isFetching || store.remainingRandomFetches === 0}
+                className="text-primary disabled:opacity-30"
+              >
+                {store.isFetching ? (
+                  <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                    />
+                  </svg>
+                )}
+              </button>
+              <span className="absolute -top-1.5 -right-1.5 text-[10px] font-bold text-white bg-primary rounded-full w-4 h-4 flex items-center justify-center">
+                {store.remainingRandomFetches}
+              </span>
+            </div>
             <button
               onClick={() => setShowCompose(true)}
               className="text-primary"

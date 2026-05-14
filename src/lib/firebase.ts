@@ -15,7 +15,7 @@ import {
   Timestamp,
   type Unsubscribe,
 } from "@firebase/firestore"
-import type { Letter } from "./types"
+import type { Letter, ThreadMessage } from "./types"
 
 const firebaseConfig = {
   apiKey: "AIzaSyAVIYU6jjuD87tfvp587tIKTx7UQfbn8E0",
@@ -35,6 +35,25 @@ export async function signIn(): Promise<string> {
   return result.user.uid
 }
 
+function threadToFirestore(thread?: ThreadMessage[]) {
+  if (!thread || thread.length === 0) return undefined
+  return thread.map((m) => ({
+    content: m.content,
+    isReply: m.isReply,
+    createdAt: Timestamp.fromDate(m.createdAt),
+  }))
+}
+
+function threadFromFirestore(data: Record<string, unknown>): ThreadMessage[] | undefined {
+  const raw = data.thread as Record<string, unknown>[] | undefined
+  if (!raw || !Array.isArray(raw) || raw.length === 0) return undefined
+  return raw.map((m) => ({
+    content: m.content as string,
+    isReply: m.isReply as boolean,
+    createdAt: (m.createdAt as Timestamp).toDate(),
+  }))
+}
+
 export function toFirestore(letter: Letter, senderId: string) {
   const data: Record<string, unknown> = {
     content: letter.content,
@@ -47,6 +66,8 @@ export function toFirestore(letter: Letter, senderId: string) {
     status: letter.status,
   }
   if (letter.replyToId) data.replyToId = letter.replyToId
+  const thread = threadToFirestore(letter.thread)
+  if (thread) data.thread = thread
   return data
 }
 
@@ -73,6 +94,7 @@ export function fromFirestore(data: Record<string, unknown>, docId: string): Let
     createdAt: timestamp.toDate(),
     status: status as Letter["status"],
     replyToId,
+    thread: threadFromFirestore(data),
     firestoreDocId: docId,
   }
 }
@@ -125,8 +147,12 @@ export async function fetchSentLetters(userId: string): Promise<Letter[]> {
   return letters
 }
 
-export async function passLetterToFirebase(letter: Letter, senderId: string) {
-  await addDoc(collection(db, "letters"), {
+export async function passLetterToFirebase(
+  letter: Letter,
+  senderId: string,
+  thread?: ThreadMessage[]
+) {
+  const data: Record<string, unknown> = {
     content: letter.content,
     senderId,
     recipientId: "",
@@ -135,7 +161,10 @@ export async function passLetterToFirebase(letter: Letter, senderId: string) {
     isReported: false,
     createdAt: Timestamp.fromDate(new Date()),
     status: "passed",
-  })
+  }
+  const t = threadToFirestore(thread)
+  if (t) data.thread = t
+  await addDoc(collection(db, "letters"), data)
 }
 
 export async function markAsReadInFirebase(letter: Letter) {

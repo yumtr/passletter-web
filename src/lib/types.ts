@@ -1,3 +1,9 @@
+export interface ThreadMessage {
+  content: string
+  isReply: boolean
+  createdAt: Date
+}
+
 export interface Letter {
   id: string
   content: string
@@ -9,4 +15,5 @@ export interface Letter {
   status: "original" | "reply" | "passed"
   replyToId?: string
   firestoreDocId?: string
+  thread?: ThreadMessage[]
 }
